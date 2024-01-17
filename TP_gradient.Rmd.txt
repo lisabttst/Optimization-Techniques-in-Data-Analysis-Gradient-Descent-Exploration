@@ -1,0 +1,412 @@
+
+### Preamble  
+A **To do** is something we recommend you read or run, but there is nothing to produce.  
+A **Question** is something you should answer, typically by running and changing minor parts of the code (e.g., a start point, an optimizer setting) and where there is a result to produce.  
+No report on this TP is required. It is just for you. 
+
+
+## 1.function visualization  
+A set of functions is given in the accompanying `test_functions.R` file. Possible functions are : `ackley`, `schwefel`, `sphere`, `michalewicz`, `quadratic`, `tunnel`, `quad_wave`, `L1norm`, `rosen`.
+
+**To do : get a visual intuition on what makes a function difficult to optimize** By changing the `fun` pointer to a function variable, keeping the dimension `d<-2`, plot a few of these functions.  
+Notice the three types of difficulties:  
+
+1. function ill-conditioning (narrowness )  
+2. curvature of the valleys  
+3. local optima  
+
+**Note on the `quadratic` function:** The condition number of the `quadratic` function (which is related to the inverse of the narrowness of the valley) can be changed in `test_functions.R` with the `cond.no` variable. The implementation of the `quadratic` function (with global variables to store the Hessian) requires to delete `glob_umat` variable when the dimension `d` is changed.  
+
+
+```{r 2DFuncVisu}
+source("./test_functions.R")
+
+# function dimension
+dim <- 2
+# choose a function from test_functions.R file
+fun <- quadratic
+glob_xstar <- fun(xx = rep(0,dim),get_glob_xstar=TRUE) # note the way to retrieve glob_xstar
+# upper and lower bounds
+LB<-c(-5,-5)
+UB<-c(5,5)
+
+# start drawing the function (necessarily dim=2)
+no.grid <- 100
+x1 <- seq(LB[1], UB[1], length.out=no.grid)
+x2 <- seq(LB[2], UB[2], length.out=no.grid)
+x.grid <- expand.grid(x1, x2)
+z <- apply(x.grid, 1, fun)
+z.grid <- matrix(z, no.grid)
+
+### 2D contour plot
+contour(x1, x2, z.grid, nlevels=20, xlab="x1", ylab="x2")
+points(x = glob_xstar[1],y=glob_xstar[2],pch=3,cex=1.5,col="green")
+
+```
+
+Do it in 3D
+
+```{r 3DfuncVisu}
+#### 3D plot
+mypersp <- persp(x = x1,y=x2,z=z.grid,zlab = "f")
+points(x = trans3d(glob_xstar[1],glob_xstar[2],fun(glob_xstar),pmat=mypersp), pch=3,cex=1.5,col="green")
+## Below is the nicer interactive 3D RGL version
+library("rgl")
+open3d()
+surface3d(x1, x2, z.grid, col= "lightblue")
+points3d(glob_xstar[1], glob_xstar[2], fun(glob_xstar), pch=19, col="green", size=10)
+title3d("a 2D function", col="blue", font=4)
+decorate3d()
+aspect3d(1, 1, 1)
+#
+```
+
+**Answer**: Rerun the above code with the `fun` variable set to the following functions which are available from `test_function.R`.
+
+```
+
+fun <- rosen  # for function curvature
+# and rerun chunk given
+fun <- quadratic # with a large cond.no in quadratic function for ill-conditioning 
+# and rerun chunk given
+fun <- schwefel # for multimodality, works also with ackley, rastrigin, ... 
+```
+
+
+
+## 2. Code of the gradient search
+
+The code is given through 3 files, `gradient_descent.R`, `line_searches.R` and `utilities_optim.R`. 
+
+* `gradient_descent.R` :  code for gradient descent, with 3 direction choices (`direction_type=gradient` or `momentum` or `NAG`) and 2 line searches (`linesearch_type=armijo` or `none` for a step proportional to the gradient norm).
+* `line_searches.R` :  code for the line searches.
+* `utilities_optim.R` :  different utility functions, the only interesting one being the finite difference function `f.gradf`.
+
+**To do: have a look at the code:** In `gradient_descent.R`, understand how `xnew` is generated i.e., connect important lines of code to the main equations of the class defining the direction of the search and the step size (basic gradient, with momentum, with NAG acceleration, with ou without Armijo line search).  
+
+A first gradient search: 
+
+```{r gradientSearch}
+source('test_functions.R')
+source('utilities_optim.R')
+source('line_searches.R')
+source('gradient_descent.R')
+### problem definition
+# search space
+pbFormulation <- list()
+pbFormulation$fun<-quadratic #function to minimize, other functions given in test_functions.R
+d<-2
+glob_xstar <- pbFormulation$fun(xx = rep(0,d),get_glob_xstar=TRUE)
+pbFormulation$d<-d # dimension
+pbFormulation$LB<-rep(-5,d) #lower bounds
+pbFormulation$UB<-rep(5,d) #upper bounds
+
+### algorithm settings
+optAlgoParam <- list()
+optAlgoParam$xinit <- runif(n = d,min = pbFormulation$LB,max = pbFormulation$UB) #c(4.5,3.5) rep(-4.9,d) # initial point
+#
+optAlgoParam$budget <- 4000
+optAlgoParam$minGradNorm <- 1.e-6
+optAlgoParam$minStepSize <- 1.e-11
+#
+optAlgoParam$direction_type <- "gradient" # choices are : "gradient", "momentum", "NAG"
+optAlgoParam$linesearch_type <- "armijo" # choices are: "none", "armijo"
+optAlgoParam$stepFactor <- 0.1 # step factor when there is no line search, 
+optAlgoParam$beta <- 0.9 # momentum term for direction_type == "momentum" or "NAG". 
+            # a low beta makes the momentum direction look more and more like -gradient
+# 
+printlevel <- 4 # controls how much is stored and printed, choices: 0 to 4, cf. gradient_descent.R top comments for more info. When d==2 and printlevel==4, does contour plots in addition to convergence plots.
+
+# a single descent
+res<-gradient_descent(pbFormulation=pbFormulation,algoParam=optAlgoParam,printlevel=printlevel)
+if (d==2) {points(x = glob_xstar[1],y=glob_xstar[2],pch=3,cex=1.5,col="green")}
+```
+
+
+Notes about the code:  
+
+* For most functions in `test_functions.R`, the global optimum is called `glob_xstar`. $0^d$ is often (but not always) the location of the global optimum.  
+* When `printlevel`$\ge 4$, an extensive recording of the points visited is available in `res$rec` with the fields  `res$rec$X`,  `res$rec$F` and  `res$rec$Time` for the point, its objective function and the time of the recording, respectively. 
+When `printlevel`$\ge 3$, the best-so-far solution is recorded in `res$rBest` with the same fields as above, `$X`, `$F`, `$Time`. 
+
+## 3.Question: purpose of a line search.  
+Find issues with descent proportional to the gradient norm (no line search, `linesearch_type<-"none"`) and observe how the line search solves the problem.  
+Hint: use the `rosen` (Rosenbrock) function.
+
+***
+**Answer**
+With the following settings, the search ping pongs from one side of the search domain to
+the other because the gradients are too large. Print `res$rec$X[1:100,]` as a complement to
+the contour plot.
+
+
+```
+
+### problem definition
+# search space
+pbFormulation <- list()
+pbFormulation$fun<-rosen
+d<-2
+glob_xstar <- pbFormulation$fun(xx = rep(0,d),get_glob_xstar=TRUE)
+pbFormulation$d<-d # dimension
+pbFormulation$LB<-rep(-5,d) #lower bounds
+pbFormulation$UB<-rep(5,d) #upper bounds
+
+### algorithm settings
+optAlgoParam <- list()
+optAlgoParam$xinit <- c(4,4)
+#
+optAlgoParam$budget <- 4000
+optAlgoParam$minGradNorm <- 1.e-6
+optAlgoParam$minStepSize <- 1.e-11
+#
+optAlgoParam$direction_type <- "gradient" 
+optAlgoParam$linesearch_type <- "none" 
+optAlgoParam$stepFactor <- 0.1 # step factor when there is no line search, 
+optAlgoParam$beta <- 0.9 # momentum term for direction_type == "momentum" or "NAG" 
+# 
+
+# a single descent
+res<-gradient_descent(pbFormulation=pbFormulation,algoParam=optAlgoParam,printlevel=4)
+if (d==2) {points(x = glob_xstar[1],y=glob_xstar[2],pch=3,cex=1.5,col="green")}
+res$rec$X[1:20,]
+
+```
+So, a smaller stepFactor is needed: 0.01, ... , 0.001 are still too large, test 0.0001 : better, some progress is achieved at the beginning, but as soon as the gradient norm decreases the optimization is very slow to the point that one might think it stalled. Try
+`plot(res$rec$X[2:100,])`
+
+Conclusion : a fixed step factor cannot accommodate functions where the norm of the gradient changes drastically.
+Solution : line search, try `armijo`. It does better, at least there is no longer the ping pong phenomenon.
+The global optimum is still not found, but this is because of the oscillations of the gradient
+(momentum and NAG will help there, see later).
+
+***  
+
+## 4.Question: gradient oscillations.  
+Find a situation where a gradient search makes slow progress because of the ill-conditionning of the function.  
+Observe the difference with the momentum and NAG directions.  
+Hint: you can change the condition number of the `quadratic` function, `cond.no`, which is readily done in the `quadratic_ill` function. 
+
+***
+**Answer**
+```
+source(file = './gradient_descent.R')
+### problem definition
+# search space
+pbFormulation <- list()
+pbFormulation$fun<-quadratic_ill
+d<-2
+glob_xstar <- pbFormulation$fun(xx = rep(0,d),get_glob_xstar=TRUE)
+pbFormulation$d<-d # dimension
+pbFormulation$LB<-rep(-5,d) #lower bounds
+pbFormulation$UB<-rep(5,d) #upper bounds
+
+### algorithm settings
+optAlgoParam <- list()
+optAlgoParam$xinit <- c(-4,rep(0,d-1))
+#
+optAlgoParam$budget <- 10000
+optAlgoParam$minGradNorm <- 1.e-6
+optAlgoParam$minStepSize <- 1.e-11
+#
+optAlgoParam$direction_type <- "gradient" 
+optAlgoParam$linesearch_type <- "armijo" 
+optAlgoParam$stepFactor <- 0.1 # step factor when there is no line search, 
+optAlgoParam$beta <- 0.9 # momentum term for direction_type == "momentum" or "NAG" 
+# 
+
+# a single descent
+res<-gradient_descent(pbFormulation=pbFormulation,algoParam=optAlgoParam,printlevel=4)
+if (d==2) {points(x = glob_xstar[1],y=glob_xstar[2],pch=3,cex=1.5,col="green")}
+```
+doesn't quite get to 0's, the global optimum.
+The phenomenon is more visible when the dimension d increases (remember to erase `glob_umat` when you change `d`)
+
+`d<-10`
+`optAlgoParam$budget <- 10000`
+
+
+Solution: try
+
+`optAlgoParam$direction_type <- "momentum"`
+
+or
+
+`optAlgoParam$direction_type <- "NAG"`
+
+You can observe on this experience that NAG is faster than momentum:
+select NAG as optimizer, save `res$rBest$Time` and `res$rBest$F` with different names, repeat
+the experiment with momentum and plot a comparison of the results (cf. [Figure 1][NAG_moment] ).
+
+![NAG vs. momentum on ill-conditioned quadratic][NAG_moment]
+
+The same can be observed with the Rosenbrock function of the previous question.
+
+
+***
+
+
+## 5.Question: local versus global.  
+Find situations where the optimization gets trapped in a local optimum. 
+
+***
+**Answer**
+```
+d<-2
+fun <- schwefel
+pbFormulation <- list(fun=fun,d=d,LB=rep(-5,d),UB=rep(5,d))
+glob_xstar <- pbFormulation$fun(xx = rep(0,d),get_glob_xstar=TRUE)
+xinit <- c(-3,3) 
+optAlgoParam <- list(xinit=xinit, budget=4000, direction_type="momentum", 
+                     linesearch_type="armijo", stepFactor=0.1, beta=0.9 ) 
+res<-gradient_descent(pbFormulation=pbFormulation,algoParam=optAlgoParam,printlevel=4)
+if (d==2) {points(x = glob_xstar[1],y=glob_xstar[2],pch=3,cex=1.5,col="green")}
+```
+
+A lot of other local optima exist, in particular on the other multimodal functions
+such as Ackley's function. A systematic procedure to find them is to
+initialize at a random point and check that the resulting f is above the optimum
+for the function (achieved at `glob_xstar` or 0). The initial point can be recovered
+a posteriori with `res$rec$X[1,]`.
+
+***
+
+## 6.Restarts  
+The `restarted_descent.R` file contains the simplest possible implementation of a restart strategy. 
+The idea of the function stands in the following lines: 
+```
+cumTime <- 0
+total_res$fbest<-.Machine$double.xmax
+for (i in 1:algoParam$nb_restarts){
+    # generate random initial point
+    algoParam$xinit <- runif(n=pbFormulation$d,min=pbFormulation$LB,max=pbFormulation$UB)
+    # proceed with local search
+    res<-gradient_descent(pbFormulation=pbFormulation,algoParam=algoParam,printlevel=locPrintLev)
+    # process and cumulate the results
+    if (res$fbest<total_res$fbest){
+      total_res$fbest<-res$fbest
+      total_res$xbest<-res$xbest
+    }
+    cumTime <- cumTime+res$nbFun
+}
+```
+Now, let's use an executable code where all the problem formulation and parameterization of the optimization algorithm is repeated so as to make the chunk independent from the previous ones:
+
+```{r restarts}
+source('test_functions.R')
+source('utilities_optim.R')
+source('line_searches.R')
+source('gradient_descent.R')
+source('restarted_descent.R')
+
+### problem definition
+# search space
+pbFormulation <- list()
+pbFormulation$fun<-schwefel #function to minimize, other functions given in test_functions.R
+d<-2
+glob_xstar <- pbFormulation$fun(xx = rep(0,d),get_glob_xstar=TRUE)
+pbFormulation$d<-d # dimension
+
+pbFormulation$LB<-rep(-5,d) #lower bounds
+pbFormulation$UB<-rep(5,d) #upper bounds
+
+### algorithm settings
+optAlgoParam <- list()
+set.seed(112233) # repeatable run despite the use of pseudo-random number generators in runif
+#
+optAlgoParam$xinit <- c(-3,3)
+optAlgoParam$budget <- 4000
+optAlgoParam$minGradNorm <- 1.e-6
+optAlgoParam$minStepSize <- 1.e-11
+#
+optAlgoParam$direction_type <- "momentum" # choices are : "gradient", "momentum", "NAG"
+optAlgoParam$linesearch_type <- "armijo" # choices are: "none", "armijo"
+optAlgoParam$stepFactor <- 0.1 # step factor when there is no line search, 
+optAlgoParam$beta <- 0.9 # momentum term for direction_type == "momentum" or "NAG" 
+# 
+printlevel <- 4 # controls how much is stored and printed, choices: 0 to 4, cf. gradient_descent.R top comments for more info. When d==2 and printlevel==4, does contour plots in addition to convergence plots.
+
+# a restarted descent
+optAlgoParam$nb_restarts <- 4
+cres <- restarted_descent(pbFormulation=pbFormulation,algoParam = optAlgoParam,printlevel=printlevel)
+if (d==2) {points(x = glob_xstar[1],y=glob_xstar[2],pch=3,cex=1.5,col="green")}
+```
+
+## Question: restarts  
+Take one of the scenarii above where one local search was trapped (same problem, same descent search settings, same initial point) and see how the restart strategy improves the situation. What is the drawback of the restart?
+
+***
+**Answer**
+The given above example of restart is a situation (Schwefel function) where a local optimizer was getting trapped. The drawback of the restart strategy is its cost: the cost of the search is either increased, or a smaller budget is affected to each local search, thus creating a risk of incomplete convergence.
+
+***
+
+## Question: L1 Regularization  
+* Program the regularized sphere function
+$$f(x) ~=~ \sum_{i=1}^d (x_i-c_i)^2 + \lambda \sum_{i=1}^d \lvert x_i \rvert \quad,\quad \lambda \ge 0$$
+where $c_i=i$.
+* Minimize it with any version of the previous descent algorithm with a line search in
+dimension $d=10$ with $\mathcal S = [-5,5]^d$.  
+Try several values of $\lambda \ge 0$. What do you notice on the solution $x^\star$ found?  
+Why, if the $x$'s were a NN weights, would it improve the generalization ability of the NN?  
+
+***
+**Answer**  
+```{r L1regularization}
+source('utilities_optim.R')
+source('line_searches.R')
+source('gradient_descent.R')
+source('restarted_descent.R')
+source('test_functions.R')
+
+# L1 regularization of sphere
+sphereL1 <- function(xx){
+  lambda<-10
+  y<-sphere(xx)+lambda*L1norm(xx)
+  return(y)
+}
+
+### problem definition
+# search space
+pbFormulation <- list()
+pbFormulation$fun<-sphereL1 #function to minimize
+d<-10
+pbFormulation$d<-d # dimension
+pbFormulation$LB<-rep(-5,d) #lower bounds
+pbFormulation$UB<-rep(5,d) #upper bounds
+
+### algorithm settings
+optAlgoParam <- list()
+set.seed(112233) # repeatable run despite the use of pseudo-random number generators in runif
+#
+optAlgoParam$budget <- 10000
+optAlgoParam$minGradNorm <- 1.e-6
+optAlgoParam$minStepSize <- 1.e-11
+optAlgoParam$nb_restarts <- 4
+#
+optAlgoParam$direction_type <- "momentum" # choices are : "gradient", "momentum", "NAG"
+optAlgoParam$linesearch_type <- "armijo" # choices are: "none", "armijo"
+optAlgoParam$stepFactor <- 0.1 # step factor when there is no line search, 
+optAlgoParam$beta <- 0.9 # momentum term for direction_type == "momentum" or "NAG" 
+# 
+printlevel <- 4 # controls how much is stored and printed, choices: 0 to 4, cf. gradient_descent.R top comments for more info. When d==2 and printlevel==4, does contour plots in addition to convergence plots.
+
+# a restarted descent
+cres <- restarted_descent(pbFormulation=pbFormulation,algoParam = optAlgoParam,printlevel=printlevel)
+
+```
+
+By running the above code for various $\lambda$'s, one gets
+\begin{tabular}{|c|cccccccccc}
+$\lambda=0.01$ & 0.99 & 1.99 & 2.99 & 3.99 & 4.99 & 5 & 5 & 5 & 5 & 5 \\
+$\lambda=0.1$ & 0.95 &1.95 &2.95 &3.95 &4.95 &5 &5 &5 &5 &5 \\
+$\lambda=1$ &0.5 &1.5 &2.5 &3.5 &4.5 &5 &5 &5 &5 &5 \\
+$\lambda=3$ & 0 & 0.5 & 1.5 & 2.49 & 3.49 & 4.49&  5 & 5 & 5 & 5 \\
+$\lambda=5$ & 0 & 0 & 0.48 & 1.50 & 2.49 & 3.51 & 4.50 & 5 & 5 & 5 \\
+$\lambda=10$ & 0 & 0 & 0 & 0 & 0.16 & 0.90 & 2. & 3.23 & 3.92 & 5
+\end{tabular}
+As $\lambda$ increases, more $x_i$'s tend to 0. At the same time, the penalized objective function `sphereL1` increases. Because $c_i=i$, the components of lower rank are closer to 0, they are thus the first ones to be set to 0. This phenomenon can be better understood by interpreting Problem as a constrained optimization problem, cf. class notes.
+
+***
+
+[NAG_moment]: ./NAG_vs_momentum_quad_d10.pdf "NAG vs. momentum on quadratic"
